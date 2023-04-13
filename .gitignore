@@ -1,0 +1,12 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+/.idea/
+**/__pycache__/**
+**/TBruns/**
+**/test_scenes/**
+**/train_scenes/**
+**/train_data/**
+**/train_truth/**
+**/assortd_data/**
+optuna_LR_opt_100runs.txt

@@ -7,49 +7,28 @@ from torchgeo.datasets import RasterDataset, unbind_samples,stack_samples
 from torchgeo.samplers import RandomBatchGeoSampler
 from torch.utils.data import DataLoader
 from torchgeo.samplers import Units
-from PanNet_dataset import PlanetScope, PlanetMask
+from PanNet_dataset import PlanetScope, PlanetMask, ElevationData
 
-#construct a function for contract blocks (deepens channels)
-def contract_block(in_channels, out_channels,kernel_size, padding):
 
-    contract = nn.Sequential(
-        torch.nn.Conv2d(in_channels,out_channels, kernel_size = kernel_size,stride = 1, padding = padding),
-        torch.nn.BatchNorm2d(out_channels),
-        torch.nn.ReLU(),
-        torch.nn.Conv2d(out_channels,out_channels,kernel_size=kernel_size,stride=1,padding = padding),
-        torch.nn.BatchNorm2d(out_channels),
-        torch.nn.ReLU(),
-        torch.nn.MaxPool2d(kernel_size = 3,stride = 2,padding=1)
-    )
-    return contract
 
-#now create expand blocks (broaden channels back out)
-def expand_block(in_channels, out_channels, kernel_size, padding):
-
-    expand = nn.Sequential(
-        torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding),
-        torch.nn.BatchNorm2d(out_channels),
-        torch.nn.ReLU(),
-        torch.nn.Conv2d(out_channels, out_channels, kernel_size, stride=1, padding=padding),
-        torch.nn.BatchNorm2d(out_channels),
-        torch.nn.ReLU(),
-        torch.nn.ConvTranspose2d(out_channels, out_channels, kernel_size=3, stride=2, padding=1, output_padding=1)
-                            )
-    return expand
-
-#Define the custom class for a U Net architecture (based on Medium article "Creating a very simple U Net model with pytorch for semantic segmentation of satellite images)
+#Define the root dirs for scens and masks
 
 train_data = './train_scenes'
+elev_data = './elevation_data'
 train_truth = './train_truth'
 
+#create geodatasets from
 data = PlanetScope(train_data)
+elev = ElevationData(elev_data)
+print(elev.crs)
+print(elev)
 truth = PlanetMask(train_truth)
 print(truth.all_bands[0])
-# truth[truth != 0] = 1
-# print(test)
-trainDS = data & truth
 
+trainDS = data & elev
+trainDS = trainDS & truth
 
+dir(trainDS)
 #PUT ROI INTO sampler
 mint, maxt = 1642191395.0, 1642191395.999999 #need to figure this for time series !!!
 #roi needs to be in ... pixels?
@@ -62,31 +41,23 @@ roi = torchgeo.datasets.BoundingBox(minx = 447139.7152,
                                     maxt = maxt)
 #split the roi into two for train/val sets with 70/30 split
 
+#define some useful params
+batch_size = 30
+length = 150
+batches = length/batch_size
+
 trainROI,valROI = roi.split(proportion = 0.7,horizontal = False)
 print("trainroi: {} valroi: {}".format(trainROI,valROI))
 #create train sampler/loiader
-train_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=12,units=Units.CRS,roi = trainROI,batch_size = 3) #
+##CHANGE LENGTH TO DEFAULT
+train_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=length,units=Units.CRS,roi = trainROI,batch_size = batch_size) #
 train_dataloader = DataLoader(trainDS, batch_sampler=train_sampler, collate_fn=stack_samples) #
 #create validation sampler/loader
-val_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=12,units=Units.CRS,roi = valROI,batch_size = 3) #
+val_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=length,units=Units.CRS,roi = valROI,batch_size = batch_size) #, length=120
 val_dataloader = DataLoader(trainDS, batch_sampler=val_sampler, collate_fn=stack_samples)
 
-# cb = contract_block(4,32,3,1)
-# eb = expand_block(32,3,3,1)
-#
-# i = 0
-# for batch in train_dataloader:
-#     i += 1
-#     print("Batch # {}".format(i))
-#     print(batch["image"].shape)
-#     #X = unbind_samples(batch) ##we don't need to unbind here because we want the batch as is
-#
-#     ctest = cb(batch["image"])
-#     print("contracted shape: {}".format(ctest.shape))
-#
-#     etest = eb(ctest)
-#     print("expanded shape: {}".format(etest.shape))
 
+#Define the custom class for a U Net architecture (based on Medium article "Creating a very simple U Net model with pytorch for semantic segmentation of satellite images)
 class U_Net(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -137,18 +108,6 @@ class U_Net(nn.Module):
         )
         return expand
 
-# i = 0
-# for batch in val_dataloader:
-#     i += 1
-#     print("Batch # {}".format(i))
-#     print(batch["image"].shape)
-#
-#     UNet = U_Net(in_channels=4,out_channels=2)
-#     Utest = UNet(batch["image"])
-#     print("shape post U-Net: {}".format(Utest.shape))
-#     a = batch["mask"].numpy()
-#     print(np.unique(a))
-
 
 
 #begin training!
@@ -158,15 +117,12 @@ from optuna.trial import TrialState
 from torchvision.models.segmentation import deeplabv3_resnet50
 
 
-#define some useful params
-batch_size = 3
-length = 12
-batches = length/batch_size
+
 #TRYING DIVERGENCE - UPSAMPLING PAN, DOWNSAMPLING BG
 class_weights = torch.FloatTensor([0.0007,1.0]).cuda() # weights selected based on pixel imbalance between background and classes
 
 #instantiate model
-UNet = U_Net(in_channels=3,out_channels=2)
+UNet = U_Net(in_channels=5,out_channels=2)
 ResNet = deeplabv3_resnet50(weights = None,num_classes = 2)
 modname = 'UNet'
 
@@ -175,43 +131,26 @@ def acc_metric(predb, yb):
     return (predb.argmax(dim=1) == yb.cuda()).float().mean()
 
 #use optuna to find best LR
-def objective(trial):
-    lr = trial.suggest_loguniform("lr",1e-5,0.1)
-    optim_type = trial.suggest_categorical("optimizer",["Adam","SGD","RMSprop"])
 
-    loss_fn = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = getattr(torch.optim, optim_type)(UNet.parameters(),lr = lr)        #torch.optim.Adam(UNet.parameters(), lr=0.01)
-    train_prec, val_prec, train_rec, val_rec, train_F1, val_F1, model = train(UNet, train_dataloader, val_dataloader,
+lr = 0.005256269118924815
+
+
+loss_fn = nn.CrossEntropyLoss(weight=class_weights)
+optimizer = torch.optim.Adam(UNet.parameters(),lr = lr)        #torch.optim.Adam(UNet.parameters(), lr=0.01)
+train_prec, val_prec, train_rec, val_rec, train_F1, val_F1, model = train(UNet, train_dataloader, val_dataloader,
                                                                               loss_fn, optimizer, acc_metric,
                                                                               epochs=100, batches=batches, modname= modname )
 
-    print("Training Precision: {}".format(train_prec))
-    print("Validation Precision: {}".format(val_prec))
-    print("Training Recall: {}".format(train_rec))
-    print("Validation Recall: {}".format(val_rec))
-    print("Train F1 (AVERAGE): {}".format(train_F1))
-    print("Validation F1 (AVERAGE): {}".format(val_F1))
+print("Training Precision: {}".format(train_prec))
+print("Validation Precision: {}".format(val_prec))
+print("Training Recall: {}".format(train_rec))
+print("Validation Recall: {}".format(val_rec))
+print("Train F1 (AVERAGE): {}".format(train_F1))
+print("Validation F1 (AVERAGE): {}".format(val_F1))
 
-    return train_F1
 
-if __name__ == "__main__":
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective,n_trials=50)
 
-    pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
-    complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
 
-    print("Study Stats:")
-    print("Number of finished trials: {}".format(len(study.trials)))
-    print("Number of pruned trials: {}".format(len(pruned_trials)))
-    print("Number of completed trials: {}".format(len(complete_trials)))
-
-    print("BEST TRIAL:")
-    btrial = study.best_trial
-    print("Value: {}".format(btrial.value))
-    print("Params:")
-    for key, value in btrial.params.items():
-        print("    {} : {}".format(key,value))
 
 
 
@@ -220,6 +159,11 @@ if __name__ == "__main__":
 ##In Progress:
 #implement tensorboard (X)
 #create script for training function (X)
-#create Git repo (maybe once cleaned & working?)  ()
-#use optuna to find best LR
+#create Git repo (maybe once cleaned & working?)  (X)
+#use optuna to find best LR (X)
 #implement LR scheduler/optimizer  ()
+#consider LR burn in/warm up ()
+#revisit elevation normalization ()
+    #find absolute min/maxes and automate ()
+    #plot band histograms and evaluate norm method ()
+#bring in ndvi ()

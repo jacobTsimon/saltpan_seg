@@ -1,7 +1,7 @@
 import torch
 import torchvision
 import torchgeo
-import rasterio as rio
+
 import torchvision.transforms as transforms
 import numpy as np
 from torchgeo.transforms import indices
@@ -14,7 +14,7 @@ from PIL import Image
 
 ##code for appending NDVI
 
-# img35 = rio.open('/media/hopkinsonlab/JS_LabDrive/imagery/Sapelo_Planet_RGB_Jan2022/20220114_151635_96_245c_3B_Visual.tif')
+# img35 = rio.open()
 # savefile = '20220114_151635_96_245c_3B_DATA.tiff'
 #
 transform = indices.AppendNDVI(index_red = 0,index_nir = 3)
@@ -38,37 +38,6 @@ print(b)
 print(tensor35[0].sum())
 ##RATIO OF BACKGROUND TO PAN PIXELS IS 1280:1
 
-##code for saving tensor as a new tiff
-# import tifffile
-#
-# tensor35 = tensor35[0]
-# tifffile.imsave(savefile,tensor35)
-#
-# test = tifffile.imread(savefile)
-#
-# np.all(np.equal(tensor35,test))
-##try using torchvision.utils.save_image ... FAILED
-# ndvi_ind = torch.tensor([5])
-
-# ndvi = torch.index_select(tensor35,0,ndvi_ind)
-# print(ndvi)
-# testB = ndvi == tensor35[ndvi_ind]
-# print(torch.all(testB == True))
-# ndvi = (ndvi + 1)/2
-# print(ndvi)
-# testA = ndvi == tensor35[ndvi_ind]
-# print(torch.all(testA == True))
-# tensor35[ndvi_ind] = ndvi
-# testF = ndvi == tensor35[ndvi_ind]
-# print(torch.all(testF == True))
-#
-#
-# torchvision.utils.save_image(tensor35,savefile)
-
-##code for visualizing NDVI
-#
-# plt.imshow(tensor35[-1],cmap = "RdYlGn_r")
-# plt.show()
 
 ##CREATE RANDOM SAMPLER
 
@@ -86,8 +55,8 @@ trainTRUTH = './train_truth'
 class PlanetScope(RasterDataset):
 
     #transforms = transform
-    filename_glob = "2022*_3B_Visual.tif"
-    filename_regex = "^(?P<date>\d{8}_\d{6})_.{2}_.{4}_(3B_Visual).*"
+    filename_glob = "2022*_3B_*.tif"
+    filename_regex = "^(?P<date>\d{8}_\d{6})_.{2}_.{4}_(3B_*).*"
     date_format = "%Y%m%d_%H%M%S"
     is_image = True
     separate_files = False
@@ -119,6 +88,19 @@ class PlanetScope(RasterDataset):
 
         return fig
 
+class ElevationData(RasterDataset):
+
+    #transforms = transform
+    filename_glob = "elevationLayer*.tif"
+    filename_regex = "^elevation.*"
+
+    is_image = True
+    separate_files = False
+    all_bands = ["1"]
+
+
+
+
 ##visualization taken from:
 from typing import Iterable, List
 
@@ -132,11 +114,11 @@ def plot_imgs(images: Iterable, axs: Iterable, chnls: List[int] = [2, 1, 0], bri
 
 def plot_msks(masks: Iterable, axs: Iterable):
     for mask, ax in zip(masks, axs):
-        ax.imshow(mask.squeeze().numpy(), cmap='Blues')
+        ax.imshow(mask.squeeze().numpy())
         ax.axis('off')
 
 
-def plot_batch(batch: dict, bright: float = 3., cols: int = 4, width: int = 5, chnls: List[int] = [2, 1, 0]):
+def plot_batch(batch: dict, bright: float = 3., cols: int = 3, width: int = 5, chnls: List[int] = [2, 1, 0],nrows = None):
     # Get the samples and the number of items in the batch
     samples = unbind_samples(batch.copy())
 
@@ -146,8 +128,10 @@ def plot_batch(batch: dict, bright: float = 3., cols: int = 4, width: int = 5, c
     # calculate the number of rows in the grid
     rows = n // cols + (1 if n % cols != 0 else 0)
 
+    if nrows:
+        rows = nrows
     # create a grid
-    _, axs = plt.subplots(rows, cols, figsize=(cols * width, rows * width))
+    fig, axs = plt.subplots(rows, cols, figsize=(cols * width, rows * width))
 
     if ('image' in batch) and ('mask' in batch):
         # plot the images on the even axis
@@ -155,7 +139,7 @@ def plot_batch(batch: dict, bright: float = 3., cols: int = 4, width: int = 5, c
                   bright=bright)  # type: ignore
 
         # plot the masks on the odd axis
-        plot_msks(masks=map(lambda x: x['mask'], samples), axs=axs.reshape(-1)[1::2])  # type: ignore
+        plot_msks(masks=map(lambda x: x['mask'], samples), axs= axs.reshape(-1)[1::2])  # type: ignore
 
     else:
 
@@ -165,6 +149,7 @@ def plot_batch(batch: dict, bright: float = 3., cols: int = 4, width: int = 5, c
 
         elif 'mask' in batch:
             plot_msks(masks=map(lambda x: x['mask'], samples), axs=axs.reshape(-1))  # type: ignore
+    return fig, axs
 
 
 dataset = PlanetScope(trainDS)
@@ -210,3 +195,4 @@ class PlanetMask(RasterDataset):
 #     #dataset.plot(sample)
 #     plt.axis("off")
 #     plt.show()
+

@@ -10,3 +10,5 @@
 **/train_truth/**
 **/assortd_data/**
 optuna_LR_opt_100runs.txt
+**/elevation_data/**
+**/saved_models/**

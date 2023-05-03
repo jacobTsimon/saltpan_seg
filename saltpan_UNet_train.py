@@ -49,7 +49,7 @@ batches = length/batch_size
 trainROI,valROI = roi.split(proportion = 0.7,horizontal = False)
 print("trainroi: {} valroi: {}".format(trainROI,valROI))
 #create train sampler/loiader
-##CHANGE LENGTH TO DEFAULT
+##TROUBLESHOOTING WITH SMALL WINDOW
 train_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=length,units=Units.CRS,roi = trainROI,batch_size = batch_size) #
 train_dataloader = DataLoader(trainDS, batch_sampler=train_sampler, collate_fn=stack_samples) #
 #create validation sampler/loader
@@ -118,8 +118,8 @@ from torchvision.models.segmentation import deeplabv3_resnet50
 
 
 
-#TRYING DIVERGENCE - UPSAMPLING PAN, DOWNSAMPLING BG
-class_weights = torch.FloatTensor([0.0007,1.0]).cuda() # weights selected based on pixel imbalance between background and classes
+#TRYING TO INCREASE PRECISION, INCREASED BG WEIGHTS
+class_weights = torch.FloatTensor([0.07,1.0]).cuda() # weights selected based on pixel imbalance between background and classes
 
 #instantiate model
 UNet = U_Net(in_channels=5,out_channels=2)

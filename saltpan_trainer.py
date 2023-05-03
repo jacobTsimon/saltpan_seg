@@ -9,6 +9,8 @@ from sklearn.metrics import f1_score
 from torchmetrics import CohenKappa
 from torchvision import transforms
 
+torch.set_printoptions(threshold=10000)
+
 #introduce colors for legibility
 class bcolors:
     HEADER = '\033[95m'
@@ -84,18 +86,19 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
     num_skipped = 0
 
     for epoch in range(epochs):
-        print('Epoch {}/{}'.format(epoch, epochs - 1))
+        print(bcolors.WARNING + 'Epoch {}/{}'.format(epoch, epochs - 1))
+        print(bcolors.ENDC)
         print('-' * 10)
 
         for phase in ['train', 'valid']:
             if phase == 'train':
                 model.train(True)  # Set training mode = true
                 dataloader = train_dl
-                Llogdir = 'TBruns/run9opt_train_Loss' #%%
-                Plogdir = 'TBruns/run9opt_train_Precision'
-                Rlogdir = 'TBruns/run9opt_train_Recall'
-                Flogdir = 'TBruns/run9opt_train_F1'
-                Slogdir = 'TBruns/run9opt_train_NumSkipped'
+                Llogdir = 'TBruns/runTS1opt_train_Loss' #%%
+                Plogdir = 'TBruns/runTS1opt_train_Precision'
+                Rlogdir = 'TBruns/runTS1opt_train_Recall'
+                Flogdir = 'TBruns/runTS1opt_train_F1'
+                Slogdir = 'TBruns/runTS1opt_train_NumSkipped'
                 Lwriter = SummaryWriter(log_dir=Llogdir)
                 Pwriter = SummaryWriter(log_dir=Plogdir)
                 Rwriter = SummaryWriter(log_dir=Rlogdir)
@@ -104,11 +107,11 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
             else:
                 model.train(False)  # Set model to evaluate mode
                 dataloader = valid_dl
-                Llogdir = 'TBruns/run9opt_val_Loss' #%%
-                Plogdir = 'TBruns/run9opt_val_Precision'
-                Rlogdir = 'TBruns/run9opt_val_Recall'
-                Flogdir = 'TBruns/run9opt_val_F1'
-                Slogdir = 'TBruns/run9opt_val_NumSkipped'
+                Llogdir = 'TBruns/runTS1opt_val_Loss' #%%
+                Plogdir = 'TBruns/runTS1opt_val_Precision'
+                Rlogdir = 'TBruns/runTS1opt_val_Recall'
+                Flogdir = 'TBruns/runTS1opt_val_F1'
+                Slogdir = 'TBruns/runTS1opt_val_NumSkipped'
                 Lwriter = SummaryWriter(log_dir=Llogdir)
                 Pwriter = SummaryWriter(log_dir=Plogdir)
                 Rwriter = SummaryWriter(log_dir=Rlogdir)
@@ -139,8 +142,8 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
 
                 ##TRY RERUNNING WITHOUT THIS BLOCK
                 if y.sum() == 0:
-                    print(bcolors.BOLD + "Step {} empty - skipped".format(step))
-                    print(bcolors.HEADER)
+                    print(bcolors.HEADER + "Step {} empty - skipped".format(step))
+                    print(bcolors.ENDC)
                     num_skipped += 1
                     continue
                 #try to screen for nans in elevation data
@@ -148,7 +151,7 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
 
                 if nanchek.long().sum() != 0:
                     print(bcolors.FAIL + "NaN in elevation @ step {} - skipped".format(step))
-                    print(bcolors.HEADER)
+                    print(bcolors.ENDC)
                     num_skipped += 1
                     continue
 
@@ -166,9 +169,11 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
                 # x = torch.index_select(x,1,ind.cuda())
 
                 #x= preprocess(x)
-                print("PreNorm shape: {}".format(x.shape))
+                # print("PreNorm shape: {}".format(x.shape))
+                # print("PreNorm: ",x)
                 x = Z1Norm(x,5).cuda()
-                print("PostNorm shape: {}".format(x.shape))
+                # print("PostNorm shape: {}".format(x.shape))
+                # print("PostNorm: ",x)
 
                 #print(np.unique(x[:,0,:,:].cpu().detach()))
 
@@ -202,14 +207,14 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
                 # stats - whatever is the phase
                 #acc = acc_fn(outputs['out'], y)
                 #kappa = kappa_fn(preds = outputs['out'], target = y.to('cuda')) #.argmax(dim= 1) FOR UNET ADD BACK IN
-                print("outputs shape:",outputs.shape,"outputs unique:",np.unique(outputs[0,:,:,:].detach().cpu()))
+                # print("outputs shape:",outputs.shape,"outputs:",outputs.detach().cpu())
                 a = torch.reshape(outputs.argmax(dim=1).detach().cpu(),(-1,)) #.argmax(dim=1)
-                print("a shape:",a.shape,"a unique:", np.unique(a))
+                # print("a shape:",a.shape,"a unique:", a)
                 assert not torch.isnan(a).any()
                 assert not torch.isinf(a).any()
-                print("y shape", y.shape, "y0 unique:",np.unique(y[0,:,:].detach().cpu()))
+                # print("y shape", y.shape, "y0 unique:",y.detach().cpu())
                 b = torch.reshape(y.cpu(),(-1,))
-                print("b shape", b.shape, "b unique:",np.unique(b))
+                # print("b shape", b.shape, "b unique:",b)
 
                 precision = precision_score(y_pred = a,y_true = b)
                 recall = recall_score(y_pred = a,y_true = b)
@@ -233,7 +238,8 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
 
                 if step % 2 == 0:
                     # clear_output(wait=True)
-                    print('Current step: {}  Loss: {}   Precision: {} Recall: {} F1: {} AllocMem (Mb): {}'.format(step, loss, precision,recall,f1,torch.cuda.memory_allocated() / 1024 / 1024))
+                    print(bcolors.BOLD + 'Current step: {}  Loss: {}   Precision: {} Recall: {} F1: {} AllocMem (Mb): {}'.format(step, loss, precision,recall,f1,torch.cuda.memory_allocated() / 1024 / 1024))
+                    print(bcolors.ENDC)
 
 
             epoch_loss = running_loss / batches #len(dataloader.dataset)
@@ -252,7 +258,7 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
             num_skipped = 0
 
             print(bcolors.OKBLUE + '{} epoch {} | epoch Loss: {:.4f} |   epoch Precision: {} | epoch Recall: {} | epoch F1: {}'.format(phase,epoch, epoch_loss, epoch_prec,epoch_rec,epoch_F1))
-            print(bcolors.HEADER)
+            print(bcolors.ENDC)
 
             train_precision.append(epoch_prec) if phase == 'train' else valid_precision.append(epoch_prec)
             train_recall.append(epoch_rec) if phase == 'train' else valid_recall.append(epoch_rec)
@@ -266,8 +272,8 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
             if phase == 'valid' and epoch_F1 > best_F1:
                 best_F1 = epoch_F1
                 print(bcolors.OKGREEN + "New best model F1: {}".format(epoch_F1))
-                print(bcolors.HEADER)
-                torch.save(model.state_dict(),'./saved_models/run9opt.pth') #%%
+                print(bcolors.ENDC)
+                torch.save(model.state_dict(),'./saved_models/runTS1opt.pth') #%%
 
 
     # average F1 scores for optuna (IS THIS VALID??)
@@ -281,6 +287,6 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
     print(bcolors.OKGREEN + 'Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     print(bcolors.OKGREEN + 'Number of empty batches skipped: {}'.format(num_skipped))
     print(bcolors.OKGREEN + "Best model: {}".format(best_F1))
-    print(bcolors.HEADER)
+    print(bcolors.ENDC)
 
     return train_precision, valid_precision, train_recall, valid_recall,train_F1,valid_F1, model

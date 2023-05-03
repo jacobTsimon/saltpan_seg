@@ -8,34 +8,6 @@ from torchgeo.transforms import indices
 import matplotlib.pyplot as plt
 from PIL import Image
 
-
-
-##APPEND NDVI & ELEVATION and convert back?
-
-##code for appending NDVI
-
-# img35 = rio.open()
-# savefile = '20220114_151635_96_245c_3B_DATA.tiff'
-#
-transform = indices.AppendNDVI(index_red = 0,index_nir = 3)
-#
-# PIL35 = Image.open('/media/hopkinsonlab/JS_LabDrive/imagery/Sapelo_Planet_RGB_Jan2022/20220114_151635_96_245c_3B_Visual.tif')
-# tensor35 = transforms.ToTensor()(PIL35)
-# print(tensor35.shape)
-#
-# tensor35 = transform(tensor35)[0] #.type(torch.int64)
-# print(tensor35.shape)
-
-PIL35 = Image.open('./train_truth/pantiffF.tif')
-tensor35 = transforms.ToTensor()(PIL35)
-print(tensor35.shape)
-print(np.unique(tensor35.numpy()))
-tensor35[tensor35 != 0] = 1
-a = torch.count_nonzero(tensor35, dim = 0)
-b = torch.numel(tensor35) - a
-print(a)
-print(b)
-print(tensor35[0].sum())
 ##RATIO OF BACKGROUND TO PAN PIXELS IS 1280:1
 
 
@@ -161,38 +133,5 @@ class PlanetMask(RasterDataset):
     is_image = False
     separate_files = False
     all_bands = ["1"]
-# #create mask dataset
-# truth = PlanetMask(trainTRUTH)
-#
-# #combine the data and mask sets
-# train_dataset = dataset & truth
-# print(train_dataset)
-#
-# #PUT ROI INTO sampler
-# mint, maxt = 1642191395.0, 1642191395.999999 #need to figure this for time series !!!
-# #roi needs to be in ... pixels?
-# #roi here is based on 35half from GEOAI_proj
-# roi = torchgeo.datasets.BoundingBox(minx = 447139.7152,
-#                                     maxx =509083.5446,
-#                                     miny = 3464718.6179,
-#                                     maxy = 3499982.3511,
-#                                     mint = mint,
-#                                     maxt = maxt)
-# sampler = RandomGeoSampler(train_dataset, size=512 * 3, length=10,units=Units.CRS,roi = roi) #
-# dataloader = DataLoader(train_dataset, sampler=sampler, collate_fn=stack_samples) #
-#
-# for batch in dataloader:
-#     sample = unbind_samples(batch)[0]
-#     print(sample["image"].shape)
-#     print(type(sample))
-#     #we can do the NDVI transform here
-#     imN = transform(sample["image"])[0]
-#     print(imN.shape)
-#     #could this be a problem? since we are doing the transform after random sampling?
-#
-#     plot_batch(batch)
-#
-#     #dataset.plot(sample)
-#     plt.axis("off")
-#     plt.show()
+
 

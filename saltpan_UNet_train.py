@@ -46,8 +46,9 @@ batch_size = 30
 length = 150
 batches = length/batch_size
 
-trainROI,valROI = roi.split(proportion = 0.7,horizontal = False)
-print("trainroi: {} valroi: {}".format(trainROI,valROI))
+trainROI,testROI = roi.split(proportion = 0.8,horizontal = False)
+trainROI,valROI = trainROI.split(proportion=0.8,horizontal=False)
+print("trainroi area: {} valroi: {}".format(trainROI.area,valROI.area))
 #create train sampler/loiader
 ##TROUBLESHOOTING WITH SMALL WINDOW
 train_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=length,units=Units.CRS,roi = trainROI,batch_size = batch_size) #

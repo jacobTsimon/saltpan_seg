@@ -7,47 +7,22 @@ from torchgeo.datasets import RasterDataset, unbind_samples,stack_samples
 from torchgeo.samplers import RandomBatchGeoSampler
 from torch.utils.data import DataLoader
 from torchgeo.samplers import Units
-from PanNet_dataset import PlanetScope, PlanetMask
+from PanNet_dataset import PlanetScope, PlanetMask, ElevationData
 
-#construct a function for contract blocks (deepens channels)
-def contract_block(in_channels, out_channels,kernel_size, padding):
 
-    contract = nn.Sequential(
-        torch.nn.Conv2d(in_channels,out_channels, kernel_size = kernel_size,stride = 1, padding = padding),
-        torch.nn.BatchNorm2d(out_channels),
-        torch.nn.ReLU(),
-        torch.nn.Conv2d(out_channels,out_channels,kernel_size=kernel_size,stride=1,padding = padding),
-        torch.nn.BatchNorm2d(out_channels),
-        torch.nn.ReLU(),
-        torch.nn.MaxPool2d(kernel_size = 3,stride = 2,padding=1)
-    )
-    return contract
-
-#now create expand blocks (broaden channels back out)
-def expand_block(in_channels, out_channels, kernel_size, padding):
-
-    expand = nn.Sequential(
-        torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding),
-        torch.nn.BatchNorm2d(out_channels),
-        torch.nn.ReLU(),
-        torch.nn.Conv2d(out_channels, out_channels, kernel_size, stride=1, padding=padding),
-        torch.nn.BatchNorm2d(out_channels),
-        torch.nn.ReLU(),
-        torch.nn.ConvTranspose2d(out_channels, out_channels, kernel_size=3, stride=2, padding=1, output_padding=1)
-                            )
-    return expand
 
 #Define the custom class for a U Net architecture (based on Medium article "Creating a very simple U Net model with pytorch for semantic segmentation of satellite images)
 
 train_data = './train_scenes'
+elev_data = './elevation_data'
 train_truth = './train_truth'
 
 data = PlanetScope(train_data)
+elev = ElevationData(elev_data)
 truth = PlanetMask(train_truth)
-print(truth.all_bands[0])
-# truth[truth != 0] = 1
-# print(test)
-trainDS = data & truth
+
+trainDS = data & elev
+trainDS = trainDS & truth
 
 
 #PUT ROI INTO sampler
@@ -64,28 +39,9 @@ roi = torchgeo.datasets.BoundingBox(minx = 447139.7152,
 
 trainROI,valROI = roi.split(proportion = 0.7,horizontal = False)
 print("trainroi: {} valroi: {}".format(trainROI,valROI))
-#create train sampler/loiader
-train_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=12,units=Units.CRS,roi = trainROI,batch_size = 3) #
-train_dataloader = DataLoader(trainDS, batch_sampler=train_sampler, collate_fn=stack_samples) #
-#create validation sampler/loader
-val_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=12,units=Units.CRS,roi = valROI,batch_size = 3) #
-val_dataloader = DataLoader(trainDS, batch_sampler=val_sampler, collate_fn=stack_samples)
 
-# cb = contract_block(4,32,3,1)
-# eb = expand_block(32,3,3,1)
-#
-# i = 0
-# for batch in train_dataloader:
-#     i += 1
-#     print("Batch # {}".format(i))
-#     print(batch["image"].shape)
-#     #X = unbind_samples(batch) ##we don't need to unbind here because we want the batch as is
-#
-#     ctest = cb(batch["image"])
-#     print("contracted shape: {}".format(ctest.shape))
-#
-#     etest = eb(ctest)
-#     print("expanded shape: {}".format(etest.shape))
+
+
 
 class U_Net(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -137,17 +93,7 @@ class U_Net(nn.Module):
         )
         return expand
 
-# i = 0
-# for batch in val_dataloader:
-#     i += 1
-#     print("Batch # {}".format(i))
-#     print(batch["image"].shape)
-#
-#     UNet = U_Net(in_channels=4,out_channels=2)
-#     Utest = UNet(batch["image"])
-#     print("shape post U-Net: {}".format(Utest.shape))
-#     a = batch["mask"].numpy()
-#     print(np.unique(a))
+
 
 
 
@@ -156,17 +102,16 @@ from saltpan_trainer import train
 import optuna
 from optuna.trial import TrialState
 from torchvision.models.segmentation import deeplabv3_resnet50
+import pandas
+import math
 
 
-#define some useful params
-batch_size = 3
-length = 12
-batches = length/batch_size
+
 #TRYING DIVERGENCE - UPSAMPLING PAN, DOWNSAMPLING BG
-class_weights = torch.FloatTensor([0.0007,1.0]).cuda() # weights selected based on pixel imbalance between background and classes
+
 
 #instantiate model
-UNet = U_Net(in_channels=3,out_channels=2)
+UNet = U_Net(in_channels=5,out_channels=2)
 ResNet = deeplabv3_resnet50(weights = None,num_classes = 2)
 modname = 'UNet'
 
@@ -176,14 +121,36 @@ def acc_metric(predb, yb):
 
 #use optuna to find best LR
 def objective(trial):
+    #optimize for learning rate and optimizer type
     lr = trial.suggest_loguniform("lr",1e-5,0.1)
     optim_type = trial.suggest_categorical("optimizer",["Adam","SGD","RMSprop"])
+
+    #optimize for batch size and class weights
+    batch_size = trial.suggest_int("batch_size",3,30)
+    class_weightsBG = trial.suggest_float("cw_bg",0.0001,.01)
+    class_weightsSP = trial.suggest_float("cw_sp",1.0,2.0,log = True)
+    class_weights = torch.FloatTensor([class_weightsBG,class_weightsSP]).cuda()
+
+
+    # create train sampler/loader
+    train_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=120, units=Units.CRS, roi=trainROI,
+                                          batch_size=batch_size)  #
+
+    # static params
+    length = 120
+    batches = train_sampler.__len__()#get precise batchnumber this way!
+    print(batches)
+
+    train_dataloader = DataLoader(trainDS, batch_sampler=train_sampler, collate_fn=stack_samples)  #
+    # create validation sampler/loader
+    val_sampler = RandomBatchGeoSampler(trainDS, size=512 * 3, length=120, units=Units.CRS, roi=valROI, batch_size=batch_size)  #
+    val_dataloader = DataLoader(trainDS, batch_sampler=val_sampler, collate_fn=stack_samples)
 
     loss_fn = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = getattr(torch.optim, optim_type)(UNet.parameters(),lr = lr)        #torch.optim.Adam(UNet.parameters(), lr=0.01)
     train_prec, val_prec, train_rec, val_rec, train_F1, val_F1, model = train(UNet, train_dataloader, val_dataloader,
                                                                               loss_fn, optimizer, acc_metric,
-                                                                              epochs=100, batches=batches, modname= modname )
+                                                                              epochs=70, batches=batches, modname= modname,batch_size=batch_size)
 
     print("Training Precision: {}".format(train_prec))
     print("Validation Precision: {}".format(val_prec))
@@ -213,7 +180,12 @@ if __name__ == "__main__":
     for key, value in btrial.params.items():
         print("    {} : {}".format(key,value))
 
+    btrials = study.best_trials
+    print("best trials: \n",btrials)
 
+    #save all trials
+    df = study.trials_dataframe()
+    df.to_csv('optuna_trials.csv')
 
 #it's running! need to evaluate the output
 

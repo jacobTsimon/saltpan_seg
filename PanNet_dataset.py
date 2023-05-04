@@ -14,28 +14,7 @@ from PIL import Image
 
 ##code for appending NDVI
 
-# img35 = rio.open('/media/hopkinsonlab/JS_LabDrive/imagery/Sapelo_Planet_RGB_Jan2022/20220114_151635_96_245c_3B_Visual.tif')
-# savefile = '20220114_151635_96_245c_3B_DATA.tiff'
-#
-transform = indices.AppendNDVI(index_red = 0,index_nir = 3)
-#
-# PIL35 = Image.open('/media/hopkinsonlab/JS_LabDrive/imagery/Sapelo_Planet_RGB_Jan2022/20220114_151635_96_245c_3B_Visual.tif')
-# tensor35 = transforms.ToTensor()(PIL35)
-# print(tensor35.shape)
-#
-# tensor35 = transform(tensor35)[0] #.type(torch.int64)
-# print(tensor35.shape)
 
-PIL35 = Image.open('./train_truth/pantiffF.tif')
-tensor35 = transforms.ToTensor()(PIL35)
-print(tensor35.shape)
-print(np.unique(tensor35.numpy()))
-tensor35[tensor35 != 0] = 1
-a = torch.count_nonzero(tensor35, dim = 0)
-b = torch.numel(tensor35) - a
-print(a)
-print(b)
-print(tensor35[0].sum())
 ##RATIO OF BACKGROUND TO PAN PIXELS IS 1280:1
 
 ##code for saving tensor as a new tiff
@@ -86,8 +65,8 @@ trainTRUTH = './train_truth'
 class PlanetScope(RasterDataset):
 
     #transforms = transform
-    filename_glob = "2022*_3B_Visual.tif"
-    filename_regex = "^(?P<date>\d{8}_\d{6})_.{2}_.{4}_(3B_Visual).*"
+    filename_glob = "2022*_3B_*.tif"
+    filename_regex = "^(?P<date>\d{8}_\d{6})_.{2}_.{4}_(3B_*).*"
     date_format = "%Y%m%d_%H%M%S"
     is_image = True
     separate_files = False
@@ -118,6 +97,16 @@ class PlanetScope(RasterDataset):
         ax.imshow(image)
 
         return fig
+
+class ElevationData(RasterDataset):
+
+    #transforms = transform
+    filename_glob = "elevationLayer*.tif"
+    filename_regex = "^elevation.*"
+
+    is_image = True
+    separate_files = False
+    all_bands = ["1"]
 
 ##visualization taken from:
 from typing import Iterable, List

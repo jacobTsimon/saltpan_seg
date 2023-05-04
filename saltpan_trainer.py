@@ -7,6 +7,7 @@ from sklearn.metrics import recall_score
 from sklearn.metrics import precision_score
 from torchmetrics import CohenKappa
 from torchvision import transforms
+from sklearn.metrics import f1_score
 
 #normalizing for resnet
 preprocess = transforms.Compose([
@@ -14,11 +15,38 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
+#introduce colors for legibility
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 def F1_score(precision,recall):
     f1 = 2 * (precision * recall)/(precision + recall)
     return f1
 
-def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batches=1,modname = None):
+def Z1Norm(input,bands,batch_size):
+    t_n = torch.zeros([batch_size,bands,512,512])
+    for b in range(bands):
+        # imax, imin = input[:,b,:,:].max(), input[:,b,:,:].min()
+        # nmin, nmax = 0, 1
+        imax,imin = maxs[b],mins[b]
+        plus = input[:,b,:,:] #+ abs(imin)
+
+        t_n[:,b,:,:] = (plus - imin) / (imax - imin)  # * (nmax - nmin) + nmin
+
+    return t_n
+
+mins = [0,0,0,0,-1.8980236]
+maxs = [9027,10810,12319,11044,29.606974]
+
+def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batches=1,modname = None,batch_size = 3):
     start = time.time()
     model.cuda()
 
@@ -84,20 +112,19 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
                     num_skipped += 1
                     continue
 
+                # try to screen for nans in elevation data
+                nanchek = torch.any(x.isnan(), dim=1)
+
+                if nanchek.long().sum() != 0:
+                    print(bcolors.FAIL + "NaN in elevation @ step {} - skipped".format(step))
+                    print(bcolors.ENDC)
+                    num_skipped += 1
+                    continue
+
                 y = y[:,0,:,:] # convert the 4D tensors to 3D (Batch size, X, Y)
-                print(y.sum())
+
 
                 y = y.cuda()
-                #for comparison to ResNet, use only visible bands
-
-                x = x[:, 0:3, :, :]
-                print(x.shape)
-
-                #need to ditch 4th band for ResNet
-                if modname == 'ResNet':
-                    x = x[:,0:3,:,:]
-                    print(x.shape)
-                    x = preprocess(x)
 
                 step += 1
 
@@ -129,9 +156,9 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1,batche
 
                 b = torch.reshape(y.cpu(),(-1,))
 
-                precision = precision_score(a,b)
-                recall = recall_score(a,b)
-                f1 = F1_score(precision,recall)
+                precision = precision_score(y_pred = a,y_true = b)
+                recall = recall_score(y_pred = a,y_true = b)
+                f1 = f1_score(y_true = b,y_pred = a)
                 #print(outputs.argmax(dim=1) == y.cuda())
                 # cm = confusion_matrix(y.cpu(),outputs.cpu().argmax(dim= 1))
                 # print(cm)

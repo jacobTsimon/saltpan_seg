@@ -12,3 +12,4 @@
 optuna_LR_opt_100runs.txt
 **/elevation_data/**
 **/saved_models/**
+optuna_trials.csv

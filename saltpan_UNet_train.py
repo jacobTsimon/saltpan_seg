@@ -36,8 +36,8 @@ roi = torchgeo.datasets.BoundingBox(minx = 447139.7152,
                                     mint = mint,
                                     maxt = maxt)
 #split the roi into two for train/val sets with 70/30 split
-
-trainROI,valROI = roi.split(proportion = 0.7,horizontal = False)
+trainROI,testROI = roi.split(proportion = 0.8,horizontal = False)
+trainROI,valROI = trainROI.split(proportion = 0.8,horizontal = False)
 print("trainroi: {} valroi: {}".format(trainROI,valROI))
 
 
@@ -150,7 +150,7 @@ def objective(trial):
     optimizer = getattr(torch.optim, optim_type)(UNet.parameters(),lr = lr)        #torch.optim.Adam(UNet.parameters(), lr=0.01)
     train_prec, val_prec, train_rec, val_rec, train_F1, val_F1, model = train(UNet, train_dataloader, val_dataloader,
                                                                               loss_fn, optimizer, acc_metric,
-                                                                              epochs=70, batches=batches, modname= modname,batch_size=batch_size)
+                                                                              epochs=20, batches=batches, modname= modname,batch_size=batch_size)
 
     print("Training Precision: {}".format(train_prec))
     print("Validation Precision: {}".format(val_prec))
@@ -163,7 +163,7 @@ def objective(trial):
 
 if __name__ == "__main__":
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective,n_trials=50)
+    study.optimize(objective,n_trials=20)
 
     pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
     complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
